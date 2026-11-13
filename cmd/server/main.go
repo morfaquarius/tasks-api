@@ -2,24 +2,21 @@ package main
 
 import (
 	"log"
-	"net/http"
-
-	"tasks-api/internal/handlers"
-	"tasks-api/internal/storage"
+	"tasks-api/internal/api"
+	"tasks-api/internal/storage/memory"
 )
 
 func main() {
-	// TODO: подключите конкретную реализацию (in‑memory) интерфейса Storage
-	var store storage.Storage // = memory.New() // реализуйте сами
+	store := memory.NewMemStorage()
 
-	h := handlers.New(store)
+	handler := api.NewHandler(store)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/tasks", h.TasksCollection) // GET, POST
-	mux.HandleFunc("/tasks/", h.TaskItem)       // GET, PUT, DELETE
+	server := api.NewServer(handler)
 
-	log.Println("server listening on :8080")
-	if err := http.ListenAndServe(":8080", mux); err != nil {
-		log.Fatal(err)
+	server.RegisterHandlers()
+
+	if err := server.Start(); err != nil {
+		log.Fatalf("error:%v", err)
+		return
 	}
 }
