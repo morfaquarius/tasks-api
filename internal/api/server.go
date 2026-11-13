@@ -24,6 +24,8 @@ func NewServer(handlers *Handlers) *Server {
 }
 
 func (s *Server) RegisterHandlers() {
+	s.router.Path("/health").Methods("GET").HandlerFunc(s.handlers.HandleHealthCheck)
+
 	s.router.Path("/tasks").Methods("POST").HandlerFunc(s.handlers.HandleCreateTask)
 	s.router.Path("/tasks/{id}").Methods("GET").HandlerFunc(s.handlers.HandleGetTask)
 	s.router.Path("/tasks").Methods("GET").HandlerFunc(s.handlers.HandleListTasks)
