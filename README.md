@@ -20,7 +20,6 @@
 │   └── storage/
 │       ├── storage.go             # Интерфейс хранилища
 │       └── memory/
-│           ├── errors.go          # Ошибки реализации хранилища
 │           └── memory.go          # In-memory хранилище задач
 ├── postman/
 │   └── Tasks API.postman_collection.json # Коллекция запросов Postman
