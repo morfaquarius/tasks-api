@@ -152,7 +152,7 @@
             "{{taskId}}"
           ]
         },
-        "description": "Полностью обновить задачу. Поля title, description и done обязательны."
+        "description": "Полностью обновить задачу. Непустые title и поле done обязательны; description необязательно."
       },
       "response": []
     },

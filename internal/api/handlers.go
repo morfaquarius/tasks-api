@@ -3,7 +3,8 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"log"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"tasks-api/internal/models"
@@ -16,9 +17,25 @@ type Handlers struct{ store storage.Storage }
 
 func NewHandler(s storage.Storage) *Handlers { return &Handlers{store: s} }
 
+func decodeJSONBody(r *http.Request, destination any) error {
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("request body must contain a single JSON value")
+		}
+		return err
+	}
+	return nil
+}
+
 func (h *Handlers) HandleCreateTask(w http.ResponseWriter, r *http.Request) {
 	var taskDTO TaskDTO
-	if err := json.NewDecoder(r.Body).Decode(&taskDTO); err != nil {
+	if err := decodeJSONBody(r, &taskDTO); err != nil {
 		WriteJSONError(w, err, http.StatusBadRequest)
 		return
 	}
@@ -34,19 +51,15 @@ func (h *Handlers) HandleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(createdTask); err != nil {
-		log.Printf("error encoding create response: %v", err)
-		return
-	}
+	w.Header().Set("Location", fmt.Sprintf("/tasks/%d", createdTask.ID))
+	writeJSONResponse(w, r, http.StatusCreated, createdTask)
 }
 
 func (h *Handlers) HandleGetTask(w http.ResponseWriter, r *http.Request) {
 	reqId := mux.Vars(r)["id"]
 	id, err := strconv.Atoi(reqId)
 	if err != nil {
-		WriteJSONError(w, err, http.StatusBadRequest)
+		WriteJSONError(w, InvalidTaskID, http.StatusBadRequest)
 		return
 	}
 
@@ -60,23 +73,13 @@ func (h *Handlers) HandleGetTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(getTask); err != nil {
-		log.Printf("error encoding create response: %v", err)
-		return
-	}
+	writeJSONResponse(w, r, http.StatusOK, getTask)
 }
 
 func (h *Handlers) HandleListTasks(w http.ResponseWriter, r *http.Request) {
 	tasks := h.store.ListTasks()
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(tasks); err != nil {
-		log.Printf("error encoding create response: %v", err)
-		return
-	}
+	writeJSONResponse(w, r, http.StatusOK, tasks)
 }
 
 func (h *Handlers) HandleUpdateTask(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +91,7 @@ func (h *Handlers) HandleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var taskDTO UpdateTaskDTO
-	if err := json.NewDecoder(r.Body).Decode(&taskDTO); err != nil {
+	if err := decodeJSONBody(r, &taskDTO); err != nil {
 		WriteJSONError(w, err, http.StatusBadRequest)
 		return
 	}
@@ -115,12 +118,7 @@ func (h *Handlers) HandleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(updatedTask); err != nil {
-		log.Printf("error encoding create response: %v", err)
-		return
-	}
+	writeJSONResponse(w, r, http.StatusOK, updatedTask)
 }
 
 func (h *Handlers) HandleDeleteTask(w http.ResponseWriter, r *http.Request) {
@@ -145,11 +143,5 @@ func (h *Handlers) HandleDeleteTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) HandleHealthCheck(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	// Отправляем простой статус
-	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
-		log.Printf("error encoding health check response: %v", err)
-	}
+	writeJSONResponse(w, r, http.StatusOK, map[string]string{"status": "ok"})
 }

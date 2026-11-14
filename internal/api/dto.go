@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -13,11 +15,8 @@ type TaskDTO struct {
 }
 
 func (t TaskDTO) ValidateForCreate() error {
-	if t.Title == "" {
+	if strings.TrimSpace(t.Title) == "" {
 		return errors.New("title is empty")
-	}
-	if t.Description == "" {
-		return errors.New("description is empty")
 	}
 	return nil
 }
@@ -29,11 +28,8 @@ type UpdateTaskDTO struct {
 }
 
 func (t UpdateTaskDTO) ValidateForUpdate() error {
-	if t.Title == "" {
+	if strings.TrimSpace(t.Title) == "" {
 		return errors.New("title cannot be empty")
-	}
-	if t.Description == "" {
-		return errors.New("description cannot be empty")
 	}
 	if t.Done == nil {
 		return errors.New("field 'done' is required")
@@ -47,15 +43,35 @@ type ErrorDTO struct {
 }
 
 func WriteJSONError(w http.ResponseWriter, err error, statusCode int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-
-	errDTO := ErrorDTO{
+	writeJSONResponse(w, nil, statusCode, ErrorDTO{
 		Error: err.Error(),
 		Time:  time.Now(),
+	})
+}
+
+func writeJSONResponse(w http.ResponseWriter, r *http.Request, statusCode int, response any) {
+	body, err := json.Marshal(response)
+	if err != nil {
+		method, path := "", ""
+		if r != nil {
+			method, path = r.Method, r.URL.Path
+		}
+		log.Printf("error encoding %s %s response: %v", method, path, err)
+		if statusCode != http.StatusInternalServerError {
+			WriteJSONError(w, errors.New("internal server error"), http.StatusInternalServerError)
+		}
+		return
 	}
 
-	json.NewEncoder(w).Encode(errDTO)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	if _, err := w.Write(append(body, '\n')); err != nil {
+		method, path := "", ""
+		if r != nil {
+			method, path = r.Method, r.URL.Path
+		}
+		log.Printf("error writing %s %s response: %v", method, path, err)
+	}
 }
 
 var InvalidTaskID = errors.New("invalid task id")

@@ -94,11 +94,11 @@ Content-Type: application/json
 }
 ```
 
-`id` назначается сервером, `done` при создании изначально равен `false`, `created_at` содержит время создания в UTC. Время в примере условное.
+`id` назначается сервером, `done` при создании изначально равен `false`, `created_at` содержит время создания в UTC. `description` — необязательное дополнительное поле. Время в примере условное.
 
 ### Создать задачу
 
-`POST /tasks` требует непустые `title` и `description`.
+`POST /tasks` требует поле `title`, содержащее хотя бы один символ, отличный от пробельных. Поле `description` можно опустить.
 
 ```bash
 curl -i -X POST http://localhost:9091/tasks \
@@ -120,6 +120,8 @@ curl -i -X POST http://localhost:9091/tasks \
   "created_at": "2026-11-14T00:00:00Z"
 }
 ```
+
+Ответ также содержит заголовок `Location: /tasks/{id}` с адресом созданной задачи.
 
 ### Получить список задач
 
@@ -163,7 +165,7 @@ curl -i http://localhost:9091/tasks/1
 
 ### Обновить задачу
 
-`PUT /tasks/{id}` заменяет значения полей задачи. Все три поля — `title`, `description` и `done` — обязательны; `done` должен быть JSON boolean.
+`PUT /tasks/{id}` заменяет значения полей задачи. Обязательны `title`, содержащий хотя бы один символ, отличный от пробельных, и поле `done` типа JSON boolean. `description` необязательно; если его опустить, значение будет заменено пустой строкой.
 
 ```bash
 curl -i -X PUT http://localhost:9091/tasks/1 \
@@ -197,15 +199,85 @@ curl -i -X DELETE http://localhost:9091/tasks/1
 
 ## Ошибки
 
-Ошибки, обработанные эндпоинтами API, возвращаются в JSON. Ошибки валидации и некорректный ID возвращают `400 Bad Request`; для отсутствующей задачи — `404 Not Found`:
+Все ошибки API, включая ошибки маршрутизации, возвращаются с `Content-Type: application/json` и единым объектом:
 
 ```json
 {
-  "error": "task not found",
-  "time": "2026-11-14T00:00:00Z"
+  "error": "<текст ошибки>",
+  "time": "<время ошибки в формате ISO8601>"
 }
 ```
 
-Время в примере условное. Текст `error` зависит от причины ошибки. Например, запрос с неверным JSON или пустыми обязательными полями вернет `400`; запрос к несуществующему числовому ID — `404`.
+Поле `time` указывает время формирования ответа об ошибке и сериализуется в формате RFC3339 (ISO 8601). Для запросов `POST` и `PUT` тело должно содержать ровно одно JSON-значение; дополнительные значения или данные после него приводят к `400 Bad Request`. Ниже приведены ошибочные сценарии для ручной проверки.
 
-Для неизвестного пути маршрутизатор `gorilla/mux` возвращает стандартный `404 Not Found`, а для известного пути с неподдерживаемым методом — стандартный `405 Method Not Allowed`. Эти ответы не используют JSON-формат API.
+### Проверка ошибок по эндпоинтам
+
+`GET /health`: неподдерживаемый метод возвращает `405 Method Not Allowed`:
+
+```bash
+curl -i -X POST http://localhost:9091/health
+```
+
+`POST /tasks`: некорректный JSON и отсутствие обязательного `title` возвращают `400 Bad Request`:
+
+```bash
+curl -i -X POST http://localhost:9091/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{'
+```
+
+```bash
+curl -i -X POST http://localhost:9091/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{"description":"Описание без заголовка"}'
+```
+
+В первом случае `error` содержит ошибку разбора JSON, во втором — `title is empty`. В обоих случаях тело имеет общий формат выше.
+
+`GET /tasks`: неподдерживаемый метод возвращает `405 Method Not Allowed`:
+
+```bash
+curl -i -X DELETE http://localhost:9091/tasks
+```
+
+`GET /tasks/{id}`: нечисловой ID возвращает `400 Bad Request` с ошибкой `invalid task id`, а числовой ID, которого нет в хранилище, — `404 Not Found`:
+
+```bash
+curl -i http://localhost:9091/tasks/abc
+curl -i http://localhost:9091/tasks/999999
+```
+
+`PUT /tasks/{id}`: некорректный JSON, пропущенный обязательный `title` или `done`, а также нечисловой ID возвращают `400 Bad Request`. Числовой ID отсутствующей задачи возвращает `404 Not Found`.
+
+```bash
+curl -i -X PUT http://localhost:9091/tasks/1 \
+  -H 'Content-Type: application/json' \
+  -d '{'
+curl -i -X PUT http://localhost:9091/tasks/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"description":"Без заголовка","done":true}'
+curl -i -X PUT http://localhost:9091/tasks/abc \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Задача","done":true}'
+curl -i -X PUT http://localhost:9091/tasks/999999 \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Задача","done":true}'
+```
+
+Для отсутствующего `title` значение `error` — `title cannot be empty`, для нечислового ID — `invalid task id`, для отсутствующей задачи — `task not found`.
+
+`DELETE /tasks/{id}`: нечисловой ID возвращает `400 Bad Request`, отсутствующая задача — `404 Not Found`:
+
+```bash
+curl -i -X DELETE http://localhost:9091/tasks/abc
+curl -i -X DELETE http://localhost:9091/tasks/999999
+```
+
+Запрос к неизвестному пути возвращает JSON `404 Not Found`; запрос к существующему пути с неподдерживаемым методом возвращает JSON `405 Method Not Allowed` и заголовок `Allow` со списком поддерживаемых методов этого пути. Например:
+
+```bash
+curl -i http://localhost:9091/unknown
+curl -i -X PATCH http://localhost:9091/tasks/1
+```
+
+В первом случае значение `error` — `route not found`, во втором — `method not allowed`.
